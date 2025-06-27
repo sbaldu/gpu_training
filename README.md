@@ -94,7 +94,7 @@ All code lives under `gpu_training/` and compiles on CUDA 12 + gcc 13 (Ubu
 
 ---
 
-## Exercise 1 – CUDA Memory Model 🧠
+## Exercise 1 – CUDA Memory Model 
 
 *Goal – feel the separation between CPU (host) and GPU (device) address spaces.*
 
@@ -111,13 +111,13 @@ nvcc -std=c++20 memory_model.cu -o ex01
 ./ex01   # prints “Exercise 1 – memory model: PASSED 🎉”
 ```
 
-### ✏️ Variation
+### Variation
 
 Add a non‑blocking version using **streams** + `cudaMemcpyAsync` and time a 100 MB H↔D copy to estimate PCIe bandwidth.
 
 ---
 
-## Exercise 2 – Launch Your First Kernel 🚀
+## Exercise 2 – Launch Your First Kernel 
 
 *Goal – understand grid/block configuration and indexing.*
 
@@ -139,7 +139,7 @@ nvcc -std=c++20 launch_kernel.cu -o ex02 && ./ex02
 
 ---
 
-## Exercise 3 – 2‑D Grid & Block 🧮
+## Exercise 3 – 2‑D Grid & Block 
 
 *Goal – move from 1‑D to 2‑D indexing.*
 
@@ -174,7 +174,7 @@ nvcc -std=c++20 ex03_fill_matrix.cu -o ex03 && ./ex03
 
 ---
 
-## Parallel Challenge – **The Circle of Life** 🌱🐰🦊
+## Parallel Challenge – **The Circle of Life** 
 
 A toroidal predator–prey world.  Build the starter **CPU version** first, then:
 
