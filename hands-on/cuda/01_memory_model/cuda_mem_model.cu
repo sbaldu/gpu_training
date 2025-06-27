@@ -1,4 +1,13 @@
-// C++ standard headers
+// ─────────────────────────────────────────────────────────────────────────────
+// Exercise 1 – CUDA Memory Model 
+//
+// Fill in every line marked  ►►► TODO ◄◄◄.
+// When you can build and run the program without assertions, you’re done.
+//
+// Build:   nvcc -std=c++17 memory_model.cu -o ex01
+// ─────────────────────────────────────────────────────────────────────────────
+
+// C++ headers
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -6,75 +15,64 @@
 // CUDA headers
 #include <cuda_runtime.h>
 
-// local headers
+// Local helper
 #include "cuda_check.h"
 
-// Here you can set the device ID that was assigned to you
-#define MYDEVICE 0
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+constexpr int  kDeviceId     = 0;     // Change if you were assigned a different GPU
+constexpr int  kNumElements  = 8;     // Array length
+using ValueT                 = float;
 
-///////////////////////////////////////////////////////////////////////////////
-// Program main
-///////////////////////////////////////////////////////////////////////////////
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
 int main()
 {
-  // Choose one CUDA device
-  CUDA_CHECK(cudaSetDevice(MYDEVICE));
+  // 1. Select device and create a stream
+  CUDA_CHECK(cudaSetDevice(kDeviceId));
+  cudaStream_t stream;
+  CUDA_CHECK(cudaStreamCreate(&stream));
 
-  // Create a CUDA stream to execute asynchronous operations on this device
-  cudaStream_t queue;
-  CUDA_CHECK(cudaStreamCreate(&queue));
+  // 2. Host data – h_a = {0, 1, 2, …}
+  std::vector<ValueT> h_a(kNumElements);
+  for (int i = 0; i < kNumElements; ++i) { h_a[i] = static_cast<ValueT>(i); }
 
-  // Pointer and dimension for host memory
-  int dimA = 8;
-  std::vector<float> h_a(dimA);
+  // 3. Device buffers
+  ValueT *d_a = nullptr;
+  ValueT *d_b = nullptr;
+  const std::size_t bytes = kNumElements * sizeof(ValueT);
 
-  // Allocate and initialize host memory
-  for (int i = 0; i < dimA; ++i)
-  {
-    h_a[i] = i;
-  }
+  // ───►►► Part 1 of 5 – allocate device memory ◄◄◄───────────────────────────
+  // Hint: cudaMallocAsync(void **ptr, size_t size, cudaStream_t stream)
+  CUDA_CHECK(/* TODO: allocate d_a */);
+  CUDA_CHECK(/* TODO: allocate d_b */);
 
-  // Pointers for device memory
-  float *d_a, *d_b;
+  // ───►►► Part 2 of 5 – host → device copy ◄◄◄──────────────────────────────
+  // Hint: cudaMemcpyAsync(dst, src, bytes, cudaMemcpyHostToDevice, stream)
+  CUDA_CHECK(/* TODO: h_a → d_a */);
 
-  // Part 1 of 5: allocate the device memory
-  size_t memSize = dimA * sizeof(float);
-  CUDA_CHECK(cudaMallocAsync(___));
-  CUDA_CHECK(cudaMallocAsync(___));
+  // ───►►► Part 3 of 5 – device → device copy ◄◄◄────────────────────────────
+  CUDA_CHECK(/* TODO: d_a → d_b */);
 
-  // Part 2 of 5: host to device memory copy
-  // Hint: the raw pointer to the underlying array of a vector
-  // can be obtained by calling std::vector<T>::data()
-  CUDA_CHECK(cudaMemcpyAsync(___));
+  // Clear host and copy back
+  std::fill(h_a.begin(), h_a.end(), ValueT{0});
 
-  // Part 3 of 5: device to device memory copy
-  CUDA_CHECK(cudaMemcpyAsync(___));
+  // ───►►► Part 4 of 5 – device → host copy ◄◄◄──────────────────────────────
+  CUDA_CHECK(/* TODO: d_b → h_a */);
 
-  // Clear the host memory
-  std::fill(h_a.begin(), h_a.end(), 0);
+  // ───►►► Part 5 of 5 – free device memory ◄◄◄──────────────────────────────
+  CUDA_CHECK(/* TODO: free d_a */);
+  CUDA_CHECK(/* TODO: free d_b */);
 
-  // Part 4 of 5: device to host copy
-  CUDA_CHECK(cudaMemcpyAsync(___));
+  // Wait for all asynchronous operations
+  CUDA_CHECK(cudaStreamSynchronize(stream));
 
-  // Part 5 of 5: free the device memory
-  CUDA_CHECK(cudaFreeAsync(___));
-  CUDA_CHECK(cudaFreeAsync(___));
+  // Verify result
+  for (int i = 0; i < kNumElements; ++i) { assert(h_a[i] == static_cast<ValueT>(i)); }
 
-  // Wait for all asynchronous operations to complete
-  CUDA_CHECK(cudaStreamSynchronize(queue));
-
-  // Verify the data on the host is correct
-  for (int i = 0; i < dimA; ++i)
-  {
-    assert(h_a[i] == (float)i);
-  }
-
-  // Destroy the CUDA stream
-  CUDA_CHECK(cudaStreamDestroy(queue));
-
-  // If the program makes it this far, then the results are correct and
-  // there are no run-time errors.  Good work!
-  std::cout << "Correct!" << std::endl;
-
+  CUDA_CHECK(cudaStreamDestroy(stream));
+  std::cout << "Exercise 1 – memory model: PASSED 🎉" << std::endl;
   return 0;
 }
