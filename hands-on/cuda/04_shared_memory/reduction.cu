@@ -1,71 +1,121 @@
-// C++ standard headers
+// ─────────────────────────────────────────────────────────────────────────────
+// Exercise 04 – Block-Level Reduction  (STUDENT VERSION)
+//
+// Goal:
+//   • Compute the sum of a large 1‑D array on the GPU using two kernel launches:
+//       1) Each block reduces its slice of the input into **one element**
+//       2) A second launch (single block) reduces those partial sums
+//   • Compare with the reference result computed on the host.
+//
+// Build:   nvcc -std=c++20 ex04_block_sum_student.cu -o ex04
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Follow the naming conventions introduced in Exercise 03:
+//   kBlockSize, kNumElements, numBlocks, threadsPerBlock, blocksPerGrid, …
+//
+///////////////////////////////////////////////////////////////////////////////
+
+#include <cassert>
 #include <iostream>
 #include <numeric>
 #include <random>
 #include <vector>
 
-// CUDA headers
 #include <cuda_runtime.h>
 
-// local headers
 #include "cuda_check.h"
 
-// Here you can set the device ID that was assigned to you
-#define MYDEVICE 0
+// ---------------------------------------------------------------------------
+// Configuration (you may tweak)
+// ---------------------------------------------------------------------------
+constexpr int  kDeviceId    = 0;       // change if you were assigned a different GPU
+constexpr int  kBlockSize   = 256;     // must be a power‑of‑two for this reduction
+constexpr int  kNumElements = 1 << 18; // 262 144 ints ≈ 1 MB
 
-// Part 4 of 8: implement the kernel
-__global__ void block_sum(const int* input,
-                          int* per_block_results,
-                          const size_t n)
+template <typename T>
+constexpr std::size_t Bytes(std::size_t n) { return n * sizeof(T); }
+
+// ---------------------------------------------------------------------------
+// Kernel declarations (implement them in Part 4 & 5)
+// ---------------------------------------------------------------------------
+__global__ void blockReduceKernel(const int* __restrict__ d_input,
+                                  int*  __restrict__ d_partial,
+                                  int           numElements);
+
+__global__ void finalReduceKernel(int* d_partial, int numPartials);
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+int main()
 {
-  // fill me
-  __shared__ int sdata[choose_your_favorite_size_here];
-}
+  // ───►►► Part 1 of 8 – choose device, create stream ◄◄◄─────────────────────
+  CUDA_CHECK(cudaSetDevice(kDeviceId));
+  cudaStream_t stream;
+  CUDA_CHECK(cudaStreamCreate(&stream));
 
-////////////////////////////////////////////////////////////////////////////////
-// Program main
-////////////////////////////////////////////////////////////////////////////////
-int main(void)
-{
-  std::random_device rd; // Will be used to obtain a seed for the random engine
-  std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-  std::uniform_int_distribution<> distrib(-10, 10);
-  // Create array of 256ki elements
-  const int num_elements = 1 << 18;
-  // Generate random input on the host
-  std::vector<int> h_input(num_elements);
-  for (auto& elt : h_input) {
-    elt = distrib(gen);
-  }
+  // Host‑side random input
+  std::mt19937                     rng{std::random_device{}()};
+  std::uniform_int_distribution<>  dist(-10, 10);
+  std::vector<int> h_input(kNumElements);
+  for (auto& v : h_input) v = dist(rng);
 
-  const int host_result = std::accumulate(h_input.begin(), h_input.end(), 0);
-  std::cerr << "Host sum: " << host_result << std::endl;
+  const int hostResult = std::accumulate(h_input.begin(), h_input.end(), 0);
+  std::cerr << "Host sum: " << hostResult << '\n';
 
-  // Part 1 of 8: choose a device and create a CUDA stream
+  // ───►►► Part 2 of 8 – copy input to device ◄◄◄────────────────────────────
+  int* d_input = nullptr;
+  CUDA_CHECK(cudaMallocAsync(&d_input, Bytes<int>(kNumElements), stream));
+  CUDA_CHECK(cudaMemcpyAsync(d_input, h_input.data(), Bytes<int>(kNumElements),
+                             cudaMemcpyHostToDevice, stream));
 
-  // Part 2 of 8: copy the input data to device memory
-  int* d_input;
+  // ───►►► Part 3 of 8 – allocate device buffer for partial sums ◄◄◄─────────
+  // TODO: compute numBlocks and allocate d_partial accordingly.
+  int  numBlocks  = /* TODO */;
+  int* d_partial  = nullptr;
+  // TODO: cudaMallocAsync for d_partial
 
-  // Part 3 of 8: allocate memory for the partial sums
-  // How much space does it need?
-  int* d_partial_sums_and_total;
+  // ───►►► Part 4 of 8 – launch first reduction kernel ◄◄◄───────────────────
+  // TODO: configure grid & block and launch blockReduceKernel
+  // Example:
+  //   blockReduceKernel<<<numBlocks, kBlockSize, 0, stream>>>(d_input,
+  //                                                           d_partial,
+  //                                                           kNumElements);
+  // CUDA_CHECK(cudaGetLastError());
 
-  // Part 5 of 8: launch one kernel to compute, per-block, a partial sum.
-  // How much shared memory does it need?
-  block_sum<<<num_blocks, block_size>>>(d_input, d_partial_sums_and_total,
-                                        num_elements);
-  CUDA_CHECK(cudaGetLastError());
+  // ───►►► Part 5 of 8 – launch second (final) kernel ◄◄◄────────────────────
+  // TODO: launch finalReduceKernel with one block (kBlockSize threads)
+  // CUDA_CHECK(cudaGetLastError());
 
-  // Part 6 of 8: compute the sum of the partial sums
-  block_sum<<<>>>();
-  CUDA_CHECK(cudaGetLastError());
+  // ───►►► Part 6 of 8 – copy result back ◄◄◄────────────────────────────────
+  int deviceResult = 0;
+  // TODO: cudaMemcpyAsync to copy the result back
 
-  // Part 7 of 8: copy the result back to the host
-  int device_result = 0;
+  // ───►►► Part 7 of 8 – cleanup device allocations ◄◄◄─────────────────────
+  // TODO: cudaFreeAsync for d_input and d_partial
+  // TODO: synchronize and destroy stream
 
-  std::cout << "Device sum: " << device_result << std::endl;
-
-  // Part 8 of 8: deallocate device memory and destroy the CUDA stream
+  // ───►►► Part 8 of 8 – verify ◄◄◄──────────────────────────────────────────
+  std::cout << "Device sum: " << deviceResult << '\n';
+  // TODO: compare deviceResult with hostResult (assert or if‑statement)
 
   return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Kernel definitions (Part 4 & 5) – leave blank for students
+// ---------------------------------------------------------------------------
+__global__ void blockReduceKernel(const int* __restrict__ d_input,
+                                  int*  __restrict__ d_partial,
+                                  int           numElements)
+{
+  // TODO: allocate shared memory (kBlockSize ints) via __shared__
+  // TODO: load element (or 0 if out‑of‑range) into shared memory
+  // TODO: perform reduction within the block (shared‑memory or warp shuffles)
+  // TODO: write block sum to d_partial[blockIdx.x]
+}
+
+__global__ void finalReduceKernel(int* d_partial, int numPartials)
+{
+  // TODO: final reduction of 'numPartials' values into d_partial[0]
 }
