@@ -1,460 +1,286 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Predator–Prey Cellular‑Automaton — Sequential CPU Reference + PNG Sprites
+//
 // Original Author: Felice Pantaleo (CERN), 2024
+//
+//  ❱  Overview
+//     Each automaton cell is rendered with an external 12 × 12‑pixel PNG tile:  
+//       • fox.png   – predator (🦊)  
+//       • bunny.png – prey     (🐰)  
+//       • grass.png – empty    (🌱)  
+//     Place these files in the working directory before running — or change
+//     the FOX_PNG/BUNNY_PNG/GRASS_PNG constants below.
+//
+//  ❱  Build
+//        g++ -std=c++20 -O2 predator_prey_png.cpp -lgif -o predator_prey
+//
+//  ❱  Run
+//        ./predator_prey --width 120 --height 120 --seed 42
+//
+//     Toggle SAVE_GRIDS to false if you only want timing (no GIF).
+// ─────────────────────────────────────────────────────────────────────────────
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"   // single‑header PNG/JPEG/… loader
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
-#include <optional>
 #include <random>
 #include <string>
 #include <vector>
-#include <chrono>
 
-#include "gif.h"
+#include "gif.h"          // Tiny GIF encoder (https://github.com/charlietangora/gif-h)
 
-// Compile-time variable to control saving grids
-constexpr bool SAVE_GRIDS = false; // Set to true to enable GIF output
+// ── Compile‑time switches ───────────────────────────────────────────────────
+constexpr bool SAVE_GRIDS = true;   // write simulation.gif (slow & disk heavy)
+constexpr int  TILE       = 24;     // pixels per automaton cell & sprite size
 
-void print_help() {
-  std::cout << "Prey-Predator Simulation with Custom Rules\n\n";
-  std::cout << "Usage: game_of_life [OPTIONS]\n\n";
-  std::cout << "Options:\n";
-  std::cout << "  --help                         Display this help message\n";
-  std::cout << "  --seed <value>                 Set the random seed\n";
-  std::cout << "  --weights <empty> <predator> <prey> Set the integer weights "
-               "for cell states\n";
-  std::cout
-      << "  --width <value>                Set the grid width (default: 200)\n";
-  std::cout << "  --height <value>               Set the grid height (default: "
-               "200)\n";
-  std::cout << "  --verify <file>                Verify the grid against a "
-               "reference file\n";
-  std::cout << "\n";
-  std::cout << "Simulation Rules:\n";
-  std::cout << "- An empty cell becomes a prey if there are more than two "
-               "preys surrounding it.\n";
-  std::cout
-      << "- A prey cell becomes empty if there is a single predator "
-         "surrounding it and its level is higher than prey's level minus 10.\n";
-  std::cout << "- A prey cell becomes a predator with level equal to max "
-               "predator level + 1 if there are more than two predators and "
-               "its level is smaller than the sum of the levels of the "
-               "predators surrounding it.\n";
-  std::cout << "- A prey cell becomes empty if there are no empty spaces "
-               "surrounding it.\n";
-  std::cout << "- A prey cell's level is increased by one if it survives "
-               "starvation.\n";
-  std::cout << "- A predator cell becomes empty if there are no preys "
-               "surrounding it, or if all preys have levels higher than or "
-               "equal to the predator's level.\n";
-  std::cout << "\n";
-}
+constexpr char FOX_PNG[]   = "fox.png";   // 24×24 RGBA PNG
+constexpr char BUNNY_PNG[] = "bunny.png"; // 24×24 RGBA PNG
+constexpr char GRASS_PNG[] = "grass.png"; // 24×24 RGBA PNG
 
+// ── Types ───────────────────────────────────────────────────────────────────
 enum class CellState : char { Empty = 0, Predator = 1, Prey = 2 };
 
 struct Cell {
   CellState state;
-  uint8_t level; // Level (1-255 for colored cells, 0 for empty)
+  uint8_t   level;   // gameplay strength (0‑255) — no longer affects colour
 };
+using Grid = std::vector<std::vector<Cell>>;   // grid[row][col]
 
-using Grid = std::vector<std::vector<Cell>>;
-
-Grid initialize_grid(size_t width, size_t height, int weight_empty,
-                     int weight_predator, int weight_prey, std::mt19937 &gen) {
-  Grid grid(height, std::vector<Cell>(width));
-
-  // Fix for narrowing conversion warnings
-  std::vector<double> weights = {static_cast<double>(weight_empty),
-                                 static_cast<double>(weight_predator),
-                                 static_cast<double>(weight_prey)};
-  std::discrete_distribution<> dist(weights.begin(), weights.end());
-
-  for (auto &row : grid)
-    for (auto &cell : row) {
-      cell.state = static_cast<CellState>(dist(gen));
-      if (cell.state == CellState::Predator || cell.state == CellState::Prey)
-        cell.level = 50; // Initialize level to 50 for colored cells
-      else
-        cell.level = 0; // Empty cells have level 0
-    }
-
-  return grid;
+// ── CLI help ────────────────────────────────────────────────────────────────
+void print_help() {
+  std::cout << "Predator–Prey Simulation (PNG sprite edition)\n\n"
+            << "Required tiles: fox.png, bunny.png, grass.png (all " << TILE
+            << " x " << TILE << ") in current directory.\n\n"
+            << "Options: --width  --height  --weights  --seed  --verify  --help\n";
 }
 
+// ── World initialisation ────────────────────────────────────────────────────
+Grid initialize_grid(size_t width, size_t height,
+                     int w_empty, int w_pred, int w_prey,
+                     std::mt19937 &gen) {
+  Grid g(height, std::vector<Cell>(width));
+  std::discrete_distribution<> pick({double(w_empty), double(w_pred), double(w_prey)});
+  for (auto &row : g)
+    for (auto &c : row) {
+      c.state = static_cast<CellState>(pick(gen));
+      c.level = (c.state == CellState::Empty) ? 0 : 50;
+    }
+  return g;
+}
+
+// ── Neighbour stats helper ──────────────────────────────────────────────────
 struct NeighborData {
   std::vector<uint8_t> predator_levels;
   std::vector<uint8_t> prey_levels;
   uint8_t max_predator_level = 0;
-  uint8_t max_prey_level = 0;
-  int sum_predator_levels = 0;
-  int sum_prey_levels = 0;
-  int empty_neighbors = 0;
+  uint8_t max_prey_level     = 0;
+  int     sum_predator_levels = 0;
+  int     empty_neighbors     = 0;
 };
 
-NeighborData gather_neighbor_data(const Grid &grid, int x, int y) {
-  NeighborData data;
-  int height = grid.size();
-  int width = grid[0].size();
-
+NeighborData gather_neighbor_data(const Grid &g, int x, int y) {
+  NeighborData d;
+  const int H = g.size(), W = g[0].size();
   for (int dy = -1; dy <= 1; ++dy)
     for (int dx = -1; dx <= 1; ++dx) {
-      if (dx == 0 && dy == 0)
+      if (dx == 0 && dy == 0) continue;            // skip self
+      const Cell &n = g[(y + dy + H) % H][(x + dx + W) % W];
+      switch (n.state) {
+        case CellState::Predator:
+          d.predator_levels.push_back(n.level);
+          d.max_predator_level = std::max(d.max_predator_level, n.level);
+          d.sum_predator_levels += n.level;
+          break;
+        case CellState::Prey:
+          d.prey_levels.push_back(n.level);
+          d.max_prey_level = std::max(d.max_prey_level, n.level);
+          break;
+        case CellState::Empty:
+          ++d.empty_neighbors;
+          break;
+      }
+    }
+  return d;
+}
+
+// ── Game rules update (sequential) ──────────────────────────────────────────
+void update_grid_sequential(const Grid &cur, Grid &next) {
+  const size_t H = cur.size(), W = cur[0].size();
+  for (size_t y = 0; y < H; ++y)
+    for (size_t x = 0; x < W; ++x) {
+      const Cell &c = cur[y][x];
+      Cell &n       = next[y][x];
+      const NeighborData nb = gather_neighbor_data(cur, (int)x, (int)y);
+
+      if (c.state == CellState::Empty) {
+        n = (nb.prey_levels.size() >= 2)
+                ? Cell{CellState::Prey, static_cast<uint8_t>(std::min<int>(nb.max_prey_level + 1, 255))}
+                : c;
         continue;
-      int nx = (x + dx + width) % width;
-      int ny = (y + dy + height) % height;
-      const Cell &neighbor = grid[ny][nx];
-      if (neighbor.state == CellState::Predator) {
-        data.predator_levels.push_back(neighbor.level);
-        data.max_predator_level =
-            std::max(data.max_predator_level, neighbor.level);
-        data.sum_predator_levels += neighbor.level;
-      } else if (neighbor.state == CellState::Prey) {
-        data.prey_levels.push_back(neighbor.level);
-        data.max_prey_level = std::max(data.max_prey_level, neighbor.level);
-        data.sum_prey_levels += neighbor.level;
-      } else if (neighbor.state == CellState::Empty) {
-        data.empty_neighbors++;
       }
-    }
-  return data;
-}
 
-void update_grid_sequential(const Grid &current_grid, Grid &new_grid) {
-  size_t height = current_grid.size();
-  size_t width = current_grid[0].size();
+      if (c.state == CellState::Prey) {
+        bool done = false;
+        if (nb.predator_levels.size() == 1 &&
+            nb.predator_levels[0] > (c.level > 10 ? c.level - 10 : 0)) {
+          n = {CellState::Empty, 0}; done = true;
+        }
+        if (!done && nb.prey_levels.size() > 2) { n = {CellState::Empty, 0}; done = true; }
+        if (!done && nb.predator_levels.size() > 1 && c.level < nb.sum_predator_levels) {
+          n = {CellState::Predator,
+                static_cast<uint8_t>(std::min<int>(std::max(nb.max_predator_level, nb.max_prey_level) + 1, 255))};
+          done = true;
+        }
+        if (!done && (nb.empty_neighbors == 0 || nb.prey_levels.size() > 3)) {
+          n = {CellState::Empty, 0}; done = true;
+        }
+        if (!done) {
+          n = {CellState::Prey,
+                static_cast<uint8_t>((nb.prey_levels.size() < 3 && c.level < 255) ? c.level + 1 : c.level)};
+        }
+        continue;
+      }
 
-  for (size_t y = 0; y < height; ++y) {
-    for (size_t x = 0; x < width; ++x) {
-      const Cell &current_cell = current_grid[y][x];
-      Cell &new_cell = new_grid[y][x];
-
-      NeighborData neighbors = gather_neighbor_data(current_grid, x, y);
-
-      if (current_cell.state == CellState::Empty) {
-        // Empty cell becomes Prey if more than two Preys surround it
-        if (neighbors.prey_levels.size() >= 2) {
-          new_cell.state = CellState::Prey;
-          uint8_t max_prey_level = neighbors.max_prey_level;
-          new_cell.level = (max_prey_level < 255) ? max_prey_level + 1 : 255;
+      if (c.state == CellState::Predator) {
+        if (nb.prey_levels.empty()) {
+          n = {CellState::Empty, 0};
         } else {
-          // Remains Empty
-          new_cell.state = CellState::Empty;
-          new_cell.level = 0;
-        }
-      } else if (current_cell.state == CellState::Prey) {
-        bool action_taken = false;
-
-        // Prey becomes Empty if single Predator with higher level
-        if (neighbors.predator_levels.size() == 1) {
-          uint8_t predator_level = neighbors.predator_levels[0];
-          uint8_t prey_level_minus_10 =
-              (current_cell.level >= 10) ? current_cell.level - 10 : 0;
-          if (predator_level > prey_level_minus_10) {
-            new_cell.state = CellState::Empty;
-            new_cell.level = 0;
-            action_taken = true;
-          }
-        }
-
-        // Prey becomes Empty if too many Preys surrounding it
-        if (neighbors.prey_levels.size() > 2) {
-          new_cell.state = CellState::Empty;
-          new_cell.level = 0;
-          action_taken = true;
-        }
-
-        // Prey becomes Predator under certain conditions
-        if (!action_taken && neighbors.predator_levels.size() > 1 &&
-            current_cell.level < neighbors.sum_predator_levels) {
-          new_cell.state = CellState::Predator;
-          uint8_t max_level =
-              std::max(neighbors.max_predator_level, neighbors.max_prey_level);
-          new_cell.level = (max_level < 255) ? max_level + 1 : 255;
-          action_taken = true;
-        }
-
-        // Prey becomes Empty if no Empty neighbors
-        if (!action_taken && (neighbors.empty_neighbors == 0 or
-                              neighbors.prey_levels.size() > 3)) {
-          new_cell.state = CellState::Empty;
-          new_cell.level = 0;
-          action_taken = true;
-        }
-
-        // Prey survives
-        if (!action_taken) {
-          new_cell.state = CellState::Prey;
-          if (neighbors.prey_levels.size() < 3) {
-            new_cell.level = static_cast<int>(current_cell.level + 1) <= 255
-                                 ? current_cell.level + 1
-                                 : 255;
-          } else {
-            new_cell.level = current_cell.level;
-          }
-        }
-      } else if (current_cell.state == CellState::Predator) {
-        // Predator dies if no Preys or all Preys have higher or equal levels
-        if (neighbors.prey_levels.size() == 0) {
-          // Predator dies
-          new_cell.state = CellState::Empty;
-          new_cell.level = 0;
-        } else {
-          bool all_prey_higher = true;
-          for (uint8_t prey_level : neighbors.prey_levels) {
-            if (current_cell.level >= prey_level) {
-              all_prey_higher = false;
-              break;
-            }
-          }
-
-          if (all_prey_higher) {
-            // Predator dies
-            new_cell.state = CellState::Empty;
-            new_cell.level = 0;
-          } else {
-            // Predator survives
-            new_cell.state = CellState::Predator;
-            new_cell.level = static_cast<int>(current_cell.level + 1) <= 255
-                                 ? current_cell.level + 1
-                                 : 255;
-            ;
-          }
+          bool all_stronger = std::all_of(nb.prey_levels.begin(), nb.prey_levels.end(),
+                                           [&](uint8_t l) { return l > c.level; });
+          n = all_stronger ? Cell{CellState::Empty, 0}
+                           : Cell{CellState::Predator, static_cast<uint8_t>(std::min<int>(c.level + 1, 255))};
         }
       }
     }
-  }
 }
 
-void save_frame_as_gif(const Grid &grid, GifWriter &writer) {
-  if constexpr (SAVE_GRIDS) {
-    int width = grid[0].size();
-    int height = grid.size();
-    std::vector<uint8_t> image(4 * width * height, 255); // RGBA image
+// ── Sprite loader ───────────────────────────────────────────────────────────
+struct Sprite { int w, h; std::vector<uint8_t> rgba; };
+Sprite load_png_sprite(const char *file) {
+  int w, h, ch; unsigned char *data = stbi_load(file, &w, &h, &ch, 4);
+  if (!data) { std::cerr << "Error: cannot load " << file << '\n'; std::exit(1); }
+  if (w != TILE || h != TILE) {
+    std::cerr << "Error: " << file << " must be " << TILE << " x " << TILE << "\n"; std::exit(1);
+  }
+  Sprite s{w, h, std::vector<uint8_t>(data, data + 4 * w * h)}; stbi_image_free(data); return s;
+}
 
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; ++x) {
-        size_t idx = 4 * (y * width + x);
-        const Cell &cell = grid[y][x];
-        if (cell.state == CellState::Predator) {
-          image[idx] = 0;              // R
-          image[idx + 1] = 0;          // G
-          image[idx + 2] = cell.level; // B
-          image[idx + 3] = 255;        // A
-        } else if (cell.state == CellState::Prey) {
-          image[idx] = cell.level; // R
-          image[idx + 1] = 0;      // G
-          image[idx + 2] = 0;      // B
-          image[idx + 3] = 255;    // A
-        } else {
-          image[idx] = 0;       // R
-          image[idx + 1] = 255; // G
-          image[idx + 2] = 0;   // B
-          image[idx + 3] = 255; // A
-        }
+// ── GIF frame writer ────────────────────────────────────────────────────────
+inline void blit_sprite(const Sprite &sp, std::vector<uint8_t> &img, int W, int gx, int gy) {
+  const int x0 = gx * TILE, y0 = gy * TILE;
+  for (int y = 0; y < TILE; ++y)
+    for (int x = 0; x < TILE; ++x) {
+      size_t dst = 4 * ((y0 + y) * W + (x0 + x));
+      size_t src = 4 * (y * TILE + x);
+      std::memcpy(&img[dst], &sp.rgba[src], 4);
+    }
+}
+
+void save_frame_as_gif(const Grid &g, GifWriter &wr,
+                       const Sprite &fox, const Sprite &bunny, const Sprite &grass) {
+  if constexpr (!SAVE_GRIDS) return;
+  const int cellsW = g[0].size(), cellsH = g.size();
+  const int W = cellsW * TILE, H = cellsH * TILE;
+  std::vector<uint8_t> img(W * H * 4);
+  for (int gy = 0; gy < cellsH; ++gy)
+    for (int gx = 0; gx < cellsW; ++gx) {
+      switch (g[gy][gx].state) {
+        case CellState::Empty:    blit_sprite(grass, img, W, gx, gy); break;
+        case CellState::Prey:     blit_sprite(bunny, img, W, gx, gy); break;
+        case CellState::Predator: blit_sprite(fox,   img, W, gx, gy); break;
       }
     }
-    // Set delay to 50 (hundredths of a second) for two iterations per second
-    GifWriteFrame(&writer, image.data(), width, height, 50);
-  }
+  GifWriteFrame(&wr, img.data(), W, H, 100);   // 100 ms delay per frame
 }
 
-void print_grid(const Grid &grid) {
-  // Clear the screen
-  std::cout << "\033[2J\033[1;1H";
-  for (const auto &row : grid) {
-    for (const auto &cell : row) {
-      if (cell.state == CellState::Predator)
-        std::cout << "\033[38;2;0;0;" << +cell.level
-                  << "mO\033[0m"; // Blue with intensity
-      else if (cell.state == CellState::Prey)
-        std::cout << "\033[38;2;" << +cell.level
-                  << ";0;0mO\033[0m"; // Red with intensity
-      else
-        std::cout << ' ';
-    }
-    std::cout << '\n';
-  }
+// ── Grid I/O for verification ──────────────────────────────────────────────
+void save_grid_to_file(const Grid &g, const std::string &fn) {
+  std::ofstream o(fn);
+  for (auto &r : g) { for (auto &c : r) o << int(c.state) << ' ' << int(c.level) << ' '; o << '\n'; }
 }
 
-void save_grid_to_file(const Grid &grid, const std::string &filename) {
-  std::ofstream ofs(filename);
-  for (const auto &row : grid) {
-    for (const auto &cell : row) {
-      ofs << static_cast<int>(cell.state) << ' ' << static_cast<int>(cell.level)
-          << ' ';
-    }
-    ofs << '\n';
-  }
-}
-
-bool load_grid_from_file(Grid &grid, const std::string &filename) {
-  std::ifstream ifs(filename);
-  if (!ifs.is_open()) {
-    std::cerr << "Error: Cannot open reference file " << filename << '\n';
-    return false;
-  }
-
-  for (auto &row : grid) {
-    for (auto &cell : row) {
-      int state_int;
-      int level_int;
-      ifs >> state_int >> level_int;
-      if (ifs.fail()) {
-        std::cerr << "Error: Invalid data in reference file.\n";
-        return false;
-      }
-      cell.state = static_cast<CellState>(state_int);
-      cell.level = static_cast<uint8_t>(level_int);
-    }
-  }
+bool load_grid_from_file(Grid &g, const std::string &fn) {
+  std::ifstream i(fn); if (!i) { std::cerr << "Cannot open " << fn << '\n'; return false; }
+  for (auto &r : g) for (auto &c : r) { int s, l; i >> s >> l; if (i.fail()) return false; c.state = (CellState)s; c.level = (uint8_t)l; }
   return true;
 }
 
-bool compare_grids(const Grid &grid1, const Grid &grid2) {
-  size_t height = grid1.size();
-  size_t width = grid1[0].size();
-  for (size_t y = 0; y < height; ++y)
-    for (size_t x = 0; x < width; ++x) {
-      if (grid1[y][x].state != grid2[y][x].state)
-        return false;
-      if (grid1[y][x].level != grid2[y][x].level)
-        return false;
-    }
+bool compare_grids(const Grid &a, const Grid &b) {
+  for (size_t y = 0; y < a.size(); ++y)
+    for (size_t x = 0; x < a[0].size(); ++x)
+      if (a[y][x].state != b[y][x].state || a[y][x].level != b[y][x].level) return false;
   return true;
 }
 
+// ── Main ────────────────────────────────────────────────────────────────────
 int main(int argc, char *argv[]) {
-  // Start with a grid 200x200
-  size_t width = 200;
-  size_t height = 200;
-  unsigned int seed = 0; // Default seed
-  bool seed_provided = false;
-  int weight_empty = 5;
-  int weight_predator = 1;
-  int weight_prey = 1;
-  std::string verify_filename;
+  // — Defaults & CLI --------------------------------------------------------
+  size_t Wcells = 100, Hcells = 100; unsigned seed = 0; bool seed_set = false;
+  int w_e = 5, w_p = 1, w_r = 1; std::string verify_fn;
 
-  // Parse command-line arguments
   for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--help") {
-      print_help();
-      return 0;
-    } else if (arg == "--seed") {
-      if (i + 1 < argc) {
-        seed = static_cast<unsigned int>(std::stoul(argv[++i]));
-        seed_provided = true;
-      } else {
-        std::cerr << "Error: --seed option requires an argument.\n";
-        return 1;
-      }
-    } else if (arg == "--weights") {
-      if (i + 3 < argc) {
-        weight_empty = std::stoi(argv[++i]);
-        weight_predator = std::stoi(argv[++i]);
-        weight_prey = std::stoi(argv[++i]);
-        if (weight_empty < 0 || weight_predator < 0 || weight_prey < 0) {
-          std::cerr << "Error: Weights cannot be negative.\n";
-          return 1;
-        }
-        if (weight_empty == 0 && weight_predator == 0 && weight_prey == 0) {
-          std::cerr << "Error: At least one weight must be positive.\n";
-          return 1;
-        }
-      } else {
-        std::cerr << "Error: --weights option requires three arguments.\n";
-        return 1;
-      }
-    } else if (arg == "--width") {
-      if (i + 1 < argc) {
-        width = std::stoul(argv[++i]);
-      } else {
-        std::cerr << "Error: --width option requires an argument.\n";
-        return 1;
-      }
-    } else if (arg == "--height") {
-      if (i + 1 < argc) {
-        height = std::stoul(argv[++i]);
-      } else {
-        std::cerr << "Error: --height option requires an argument.\n";
-        return 1;
-      }
-    } else if (arg == "--verify") {
-      if (i + 1 < argc) {
-        verify_filename = argv[++i];
-      } else {
-        std::cerr << "Error: --verify option requires a filename.\n";
-        return 1;
-      }
-    } else {
-      std::cerr << "Invalid argument: " << arg
-                << ". Use --help for usage information.\n";
-      return 1;
-    }
+    std::string a = argv[i];
+    if (a == "--help") { print_help(); return 0; }
+    else if (a == "--seed" && i + 1 < argc) { seed = std::stoul(argv[++i]); seed_set = true; }
+    else if (a == "--weights" && i + 3 < argc) { w_e = std::stoi(argv[++i]); w_p = std::stoi(argv[++i]); w_r = std::stoi(argv[++i]); }
+    else if (a == "--width" && i + 1 < argc) { Wcells = std::stoul(argv[++i]); }
+    else if (a == "--height" && i + 1 < argc) { Hcells = std::stoul(argv[++i]); }
+    else if (a == "--verify" && i + 1 < argc) { verify_fn = argv[++i]; }
+    else { std::cerr << "Unknown/invalid option " << a << '\n'; return 1; }
   }
 
-  // Initialize random number generator
-  if (!seed_provided) {
-    seed = std::random_device{}();
-  }
-  std::mt19937 gen(seed);
+  if (!seed_set) seed = std::random_device{}(); std::mt19937 rng(seed);
 
-  const size_t NUM_ITERATIONS = 500; // Total number of iterations
-  Grid grid = initialize_grid(width, height, weight_empty, weight_predator,
-                              weight_prey, gen);
-  Grid new_grid = grid;
+  // — Load sprites ----------------------------------------------------------
+  const Sprite fox   = load_png_sprite(FOX_PNG);
+  const Sprite bunny = load_png_sprite(BUNNY_PNG);
+  const Sprite grass = load_png_sprite(GRASS_PNG);
 
-  // Generate reference filename
-  std::string reference_filename =
-      "reference_" + std::to_string(width) + "_" + std::to_string(height) +
-      "_" + std::to_string(seed) + "_" + std::to_string(weight_empty) + "_" +
-      std::to_string(weight_predator) + "_" + std::to_string(weight_prey) +
-      ".txt";
+  // — Initialise world ------------------------------------------------------
+  Grid g = initialize_grid(Wcells, Hcells, w_e, w_p, w_r, rng);
+  Grid next = g;
 
-  // Initialize GIF writer
-  GifWriter writer = {};
+  // — Prepare GIF -----------------------------------------------------------
+  GifWriter wr = {};
   if constexpr (SAVE_GRIDS) {
-    // Set delay to 50 (hundredths of a second) for two iterations per second
-    if (!GifBegin(&writer, "simulation.gif", width, height, 50)) {
-      std::cerr << "Error: Failed to initialize GIF writer.\n";
-      return 1;
-    }
+    if (!GifBegin(&wr, "simulation.gif", Wcells * TILE, Hcells * TILE, 50)) {
+      std::cerr << "GIF init failed\n"; return 1; }
   }
 
-  // Simulation loop
-  auto start = std::chrono::high_resolution_clock::now();
-  for (size_t i = 0; i < NUM_ITERATIONS; ++i) {
-    update_grid_sequential(grid, new_grid);
-    save_frame_as_gif(grid, writer);
-    std::swap(grid, new_grid);
+  // — Simulation loop -------------------------------------------------------
+  constexpr size_t ITER = 50;
+  const auto t0 = std::chrono::high_resolution_clock::now();
+  for (size_t it = 0; it < ITER; ++it) {
+    update_grid_sequential(g, next);
+    save_frame_as_gif(g, wr, fox, bunny, grass);
+    std::swap(g, next);
   }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> elapsed_seconds = end - start;
-  std::cout << "Elapsed time of sequential version: " << elapsed_seconds.count() << "s\n";
+  const auto t1 = std::chrono::high_resolution_clock::now();
+  std::cout << "Sequential elapsed " << std::chrono::duration<double>(t1 - t0).count() << " s\n";
+  if constexpr (SAVE_GRIDS) { GifEnd(&wr); std::cout << "Saved simulation.gif\n"; }
 
-  if constexpr (SAVE_GRIDS) {
-    GifEnd(&writer);
-    std::cout << "Simulation saved as 'simulation.gif'.\n";
-  }
-
-  if (!verify_filename.empty()) {
-    // Load the reference grid and compare after simulation
-    Grid reference_grid(height, std::vector<Cell>(width));
-    if (!load_grid_from_file(reference_grid, verify_filename)) {
-      return 1;
-    }
-    if (compare_grids(grid, reference_grid)) {
-      std::cout << "Verification successful: The grids match.\n";
+  // — Verification or reference write --------------------------------------
+  if (!verify_fn.empty()) {
+    Grid ref(Hcells, std::vector<Cell>(Wcells));
+    if (!load_grid_from_file(ref, verify_fn)) return 1;
+    if (compare_grids(g, ref)) {
+      std::cout << "Verification OK\n";
     } else {
-      std::cerr << "Verification failed: The grids do not match.\n";
-      return 1;
+      std::cerr << "Verification FAILED\n"; return 1;
     }
   } else {
-    // Save the final grid to a reference file
-    save_grid_to_file(grid, reference_filename);
-    std::cout << "Reference grid saved to " << reference_filename << '\n';
+    std::string ref_fn = "reference_" + std::to_string(Wcells) + '_' + std::to_string(Hcells) + '_' +
+                         std::to_string(seed) + '_' + std::to_string(w_e) + '_' + std::to_string(w_p) + '_' +
+                         std::to_string(w_r) + ".txt";
+    save_grid_to_file(g, ref_fn);
+    std::cout << "Saved reference grid to " << ref_fn << '\n';
   }
-
   return 0;
 }
