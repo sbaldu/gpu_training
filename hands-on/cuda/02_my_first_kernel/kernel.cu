@@ -1,4 +1,16 @@
-// C++ standard headers
+// ─────────────────────────────────────────────────────────────────────────────
+// Exercise 2 – Launch Your First Kernel  (STUDENT VERSION)
+//
+// Goal:
+//   • Allocate a device array d_a of N ints
+//   • Launch a 1-D grid/block configuration so each GPU thread writes
+//       d_a[i] = i + 42
+//   • Copy the result back to the host and verify it
+//
+// Build:   nvcc -std=c++17 launch_kernel.cu -o ex02
+// ─────────────────────────────────────────────────────────────────────────────
+
+// C++ headers
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -6,71 +18,69 @@
 // CUDA headers
 #include <cuda_runtime.h>
 
-// local headers
+// Local helper
 #include "cuda_check.h"
 
-// Here you can set the device ID that was assigned to you
-#define MYDEVICE 0
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+constexpr int kDeviceId       = 0;    // Change if you were assigned a different GPU
+constexpr int kNumElements    = 64;   // Must be divisible by kBlockSize
+constexpr int kBlockSize      = 8;    // Threads per block
 
-// Part 3 of 5: implement the kernel
-__global__ void myFirstKernel(___)
+// ---------------------------------------------------------------------------
+// Kernel – each thread sets d_data[idx] = idx + 42
+// ---------------------------------------------------------------------------
+__global__ void initArrayKernel(/* TODO: add parameters */)
 {
-  ___
+  // TODO: compute global thread index
+  // TODO: guard against out-of-range accesses
+  // TODO: write the value to global memory
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Program main
-////////////////////////////////////////////////////////////////////////////////
-int main(int argc, char** argv)
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+int main()
 {
-  CUDA_CHECK(cudaSetDevice(MYDEVICE));
+  // Select device and create a stream
+  CUDA_CHECK(cudaSetDevice(kDeviceId));
+  cudaStream_t stream;
+  CUDA_CHECK(cudaStreamCreate(&stream));
 
-  // Create a CUDA stream to execute asynchronous operations on this device
-  cudaStream_t queue;
-  CUDA_CHECK(cudaStreamCreate(&queue));
+  // Host buffer (initially zeros)
+  std::vector<int> h_a(kNumElements, 0);
 
-  // Your problem's size
-  int N = 64;
+  // Device buffer
+  int* d_a = nullptr;
+  const std::size_t bytes = kNumElements * sizeof(int);
 
-  // Define the grid and block size
-  int numThreadsPerBlock = 8;
-  int numBlocks          = N / numThreadsPerBlock;
+  // ───►►► Part 1 of 5 – allocate device memory ◄◄◄──────────────────────────
+  // API reference: cudaMallocAsync(void** ptr, size_t size, cudaStream_t s)
+  // TODO: allocate d_a
 
-  // Allocate and initialize host memory
-  // hint: the vector is empty, you might want to allocate some memory ...
-  std::vector<int> h_a;
+  // ───►►► Part 2 of 5 – configure & launch kernel ◄◄◄──────────────────────
+  const int numBlocks = kNumElements / kBlockSize;
+  // API reference: <<<gridDim, blockDim, sharedMemBytes, cudaStream_t>>>
+  // TODO: launch initArrayKernel
 
-  // Pointer for the device memory
-  int* d_a;
+  // Optional: check launch errors (cudaGetLastError)
 
-  // Part 1 of 5: allocate the device memory
-  size_t memSize = N * sizeof(int);
-  CUDA_CHECK(cudaMallocAsync(___));
+  // ───►►► Part 3 of 5 – copy device → host ◄◄◄─────────────────────────────
+  // API reference: cudaMemcpyAsync(dst, src, bytes, cudaMemcpyKind, stream)
+  // TODO: copy from d_a to h_a
 
-  // Part 2 of 5: configure and launch kernel
-  myFirstKernel<<<___, ___, 0, queue>>>(___);
-  //Check for any errors that occurred during kernel launch
-  CUDA_CHECK(cudaGetLastError());
+  // ───►►► Part 4 of 5 – free device memory ◄◄◄─────────────────────────────
+  // API reference: cudaFreeAsync(void* ptr, cudaStream_t s)
+  // TODO: free d_a
 
-  // Part 4 of 5: copy data from device to host asynchronously
-  CUDA_CHECK(cudaMemcpyAsync(___));
+  // Wait for completion
+  CUDA_CHECK(cudaStreamSynchronize(stream));
 
-  // Free the device memory
-  CUDA_CHECK(cudaFreeAsync(d_a, queue));
+  // Verify result
+  for (int i = 0; i < kNumElements; ++i) { assert(h_a[i] == i + 42); }
 
-  // Wait for all asynchronous operations to complete
-  CUDA_CHECK(cudaStreamSynchronize(queue));
-
-  // Part 5 of 5: verify that the data returned to the host is correct
-  for (int i = 0; i < N; ++i) {
-    assert(h_a[i] == i + 42);
-  }
-
-  // Destroy the CUDA stream
-  CUDA_CHECK(cudaStreamDestroy(queue));
-
-  // If the program makes it this far, then the results are correct and
-  // there are no run-time errors.  Good work!
-  std::cout << "Correct, good work!" << std::endl;
-
+  CUDA_CHECK(cudaStreamDestroy(stream));
+  std::cout << "Exercise 2 – kernel launch: PASSED 🎉" << std::endl;
+  return 0;
 }
