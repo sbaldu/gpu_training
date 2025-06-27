@@ -52,14 +52,6 @@ __global__ void fillMatrixKernel(int* __restrict__ mat,
   const int col = blockIdx.x * blockDim.x + threadIdx.x;
   const int row = blockIdx.y * blockDim.y + threadIdx.y;
 
-  // 2. Exit if thread is outside the logical problem size
-  if (col >= numCols || row >= numRows) return;
-
-  // 3. Convert the 2‑D (row,col) into a 1‑D linear index
-  const int idx = row * numCols + col;
-
-  // 4. Write the pattern value
-  mat[idx] = idx;
 }
 
 // ---------------------------------------------------------------------------
