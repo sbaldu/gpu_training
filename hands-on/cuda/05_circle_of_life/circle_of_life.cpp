@@ -1,23 +1,43 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Predator–Prey Cellular‑Automaton — Sequential CPU Reference + PNG Sprites
+// Predator–Prey Cellular‑Automaton — CPU Reference Implementation + PNG Sprites
 //
-// Original Author: Felice Pantaleo (CERN), 2024
+// Original author : Felice Pantaleo (CERN), 2024
 //
-//  ❱  Overview
-//     Each automaton cell is rendered with an external 12 × 12‑pixel PNG tile:  
-//       • fox.png   – predator (🦊)  
-//       • bunny.png – prey     (🐰)  
-//       • grass.png – empty    (🌱)  
-//     Place these files in the working directory before running — or change
-//     the FOX_PNG/BUNNY_PNG/GRASS_PNG constants below.
+// ╭───────────────────────────────  WHAT IS THIS?  ───────────────────────────╮
+// │ A toroidal “Game‑of‑Life” variant with three cell states rendered with    │
+// │ external PNG tiles. The world evolves in discrete steps on the CPU; a     │
+// │ GIF of the whole run can be captured frame‑by‑frame.                      │
+// ╰────────────────────────────────────────────────────────────────────────────╯
 //
-//  ❱  Build
-//        g++ -std=c++20 -O2 predator_prey_png.cpp -lgif -o predator_prey
+//  Cell states & sprites  (all sprites must be TILE×TILE pixels)              
+//    🟩  Empty     – background grass,   file = grass.png                     
+//    🐰  Prey      – bunny,             file = bunny.png                     
+//    🦊  Predator  – fox,               file = fox.png                       
 //
-//  ❱  Run
-//        ./predator_prey --width 120 --height 120 --seed 42
+//  Evolution rules (applied every tick to each cell’s 8‑neighbour Moore set)
+//  ───────────────────────────────────────────────────────────────────────────
+//   Birth
+//     • Empty  → Prey       if ≥2 neighbouring preys.
 //
-//     Toggle SAVE_GRIDS to false if you only want timing (no GIF).
+//   Death
+//     • Prey   → Empty      if exactly 1 stronger predator                 
+//                            (pred.level > prey.level‑10).
+//     • Prey   → Empty      if overcrowded (>2 neighbouring preys) OR       
+//                            no empty neighbour.
+//     • Predator → Empty    if no prey neighbours OR every prey is stronger.
+//
+//   Evolution
+//     • Prey   → Predator   if >1 predators AND Σ level(predators) > level(prey).
+//
+//   Survival bonus
+//     • Any surviving Prey/Predator gains +1 level (capped at 255).          
+//       Levels influence only the **logic**, not sprite colour.
+//          
+//
+//  Compile‑time switches                                                     
+//    SAVE_GRIDS : true  → write simulation.gif (slow & large)                
+//                           false → skip GIF, just print runtime.            
+//    TILE       : sprite size in pixels (all PNGs **must** match).           
 // ─────────────────────────────────────────────────────────────────────────────
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -55,10 +75,25 @@ using Grid = std::vector<std::vector<Cell>>;   // grid[row][col]
 
 // ── CLI help ────────────────────────────────────────────────────────────────
 void print_help() {
-  std::cout << "Predator–Prey Simulation (PNG sprite edition)\n\n"
-            << "Required tiles: fox.png, bunny.png, grass.png (all " << TILE
-            << " x " << TILE << ") in current directory.\n\n"
-            << "Options: --width  --height  --weights  --seed  --verify  --help\n";
+  std::cout << "Predator–Prey cellular‑automaton (PNG sprite edition)\n\n";
+  std::cout << "PNG tiles required (placed in the current directory):\n"
+            << "  • " << FOX_PNG   << "  – predator  (" << TILE << "×" << TILE << ")\n"
+            << "  • " << BUNNY_PNG << "  – prey      (" << TILE << "×" << TILE << ")\n"
+            << "  • " << GRASS_PNG << "  – grass     (" << TILE << "×" << TILE << ")\n\n";
+  std::cout << "Gameplay rules (summary):\n"
+            << "  Empty → Prey       when ≥2 neighbouring preys.\n"
+            << "  Prey  → Predator   when >1 predators and they are stronger.\n"
+            << "  Prey  → Empty      when a single stronger predator exists,\n"
+            << "                        or overcrowded, or no empty neighbour.\n"
+            << "  Predator → Empty   when no prey, or every prey is stronger.\n"
+            << "  Survivors gain +1 level (max 255).\n\n";
+  std::cout << "Options:\n"
+            << "  --width   <uint>     grid width   (default 200)\n"
+            << "  --height  <uint>     grid height  (default 200)\n"
+            << "  --weights <empty> <pred> <prey>  spawn weights (ints)\n"
+            << "  --seed    <uint>     RNG seed (0 = random)\n"
+            << "  --verify  <file>     compare final grid with reference file\n"
+            << "  --help              print this help\n\n";
 }
 
 // ── World initialisation ────────────────────────────────────────────────────
