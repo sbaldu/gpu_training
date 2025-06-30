@@ -1,5 +1,10 @@
 # Introduction to GPU Programming with CUDA
+### Presentation:
+You can find the presentation here:
+<a href="[http://docs.nvidia.com/cuda/cuda-runtime-api/index.html](https://docs.google.com/presentation/d/1Id7dLpzC0UlsJCJeXdJBvwigQ1aFaDmk0l0Pgkv7bwo/edit?usp=sharing)" target="_blank">[http://docs.nvidia.com/cuda/cuda-runtime-api/index.html](https://docs.google.com/presentation/d/1Id7dLpzC0UlsJCJeXdJBvwigQ1aFaDmk0l0Pgkv7bwo/edit?usp=sharing)</a>
 
+
+### Hands-on 
 
 The CUDA Runtime API reference manual is a very useful source of information:
 <a href="http://docs.nvidia.com/cuda/cuda-runtime-api/index.html" target="_blank">http://docs.nvidia.com/cuda/cuda-runtime-api/index.html</a>
