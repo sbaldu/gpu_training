@@ -182,23 +182,19 @@ nvcc -std=c++20 ex03_fill_matrix.cu -o ex03 && ./ex03
 
 ## Parallel Challenge – **The Circle of Life** 
 
-A toroidal predator–prey world.  Build the starter **CPU version** first, then:
-
-* **Profile** hotspot (`update_grid_sequential`).
-* **Port** to CUDA.
+A toroidal predator–prey world.  Build the starter **CPU version** first, then port to CUDA
 
 Reference CPU build:
 
 ```bash
-g++ -std=c++20 -O2 circle_of_life.cpp -lgif -o circle_of_life
+make serial
 ./circle_of_life --width 256 --height 256 --seed 42
 ```
 
-GPU build template:
+Can you use the asynchronous GPU kernel launch to execute the generation of a git frame on the CPU while the GPU is running the next iteration?
 
-```bash
-nvcc -std=c++20 -O2 circle_of_life.cu -lgif -o circle_of_life_cuda
-```
+<img src="simulation.gif" alt="circleoflife" title="Circle of Life" width="500" height="500" /> 
+
 ---
 
 ### Common Pitfalls & Tips
@@ -300,10 +296,10 @@ Hints
 
 Two small host vectors `h_v1`, `h_v2` already provided.
 
-    Copy to `d_v1`, `d_v2`.
+Copy to `d_v1`, `d_v2`.
 
-    Use `thrust::transform` with a zip iterator pair to compute
-    `|v1-v2|` into a temporary `device_vector<int>` diffs.
+Use `thrust::transform` with a zip iterator pair to compute
+`|v1-v2|` into a temporary `device_vector<int>` diffs.
     
 ```
     auto first = thrust::make_zip_iterator(thrust::make_tuple(d_v1.begin(),
