@@ -273,11 +273,11 @@ Tip: wrap the Thrust copy in CUDA_CHECK(cudaStreamSynchronize(queue)); before de
 *Folder *: thrust/03_data_statistics
 *Goal *: combine transform and reduce to compute simple stats.
 
-1.	Host vector h_data(N); fill with random floats (provided helper).
-2.	Copy to thrust::device_vector<float> d_data.
-3.	Mean = thrust::reduce(d_data.begin(), d_data.end()) / N.
-4.	squared_diffs[i] = (d_data[i] – mean)² via thrust::transform with a lambda or functor.
-5.	Stdev = sqrt(reduce(squared_diffs)/N).
+1.	Host vector `h_data(N)`; fill with random floats (provided helper).
+2.	Copy to `thrust::device_vector<float> d_data`.
+3.	`Mean = thrust::reduce(d_data.begin(), d_data.end()) / N`.
+4.	`squared_diffs[i] = (d_data[i] – mean)²` via `thrust::transform` with a lambda or functor.
+5.	`Stdev = sqrt(reduce(squared_diffs)/N)`.
 6.	Challenge: recompute stdev without the intermediate buffer (use a binary transform-reduce).
 
 Build & run:
@@ -286,22 +286,25 @@ cd hands-on/thrust/03_data_statistics
 make test      # Makefile prints mean & σ and checks against CPU reference
 ```
 Hints
+
 ```
     thrust::placeholders::_1 can shorten lambdas (_1 - mean).
 ```
-    For the “no buffer” variant use thrust::transform_reduce.
+
+    For the "no buffer" variant use `thrust::transform_reduce`.
 
 ### Exercise 4 – Maximum Absolute Difference (Zip Iterators)
 
-*Folder *: thrust/04_max_difference
-*Goal *: learn zip iterators and element-wise transforms.
+*Folder*: thrust/04_max_difference
+*Goal*: learn zip iterators and element-wise transforms.
 
-    Two small host vectors `h_v1`, `h_v2` already provided.
+Two small host vectors `h_v1`, `h_v2` already provided.
 
     Copy to `d_v1`, `d_v2`.
 
     Use `thrust::transform` with a zip iterator pair to compute
     `|v1-v2|` into a temporary `device_vector<int>` diffs.
+    
 ```
     auto first = thrust::make_zip_iterator(thrust::make_tuple(d_v1.begin(),
                                                               d_v2.begin()));
@@ -315,6 +318,7 @@ Hints
 
     max_difference = thrust::reduce(diffs.begin(), diffs.end(), 0, thrust::maximum<int>());
 ```
+
     Print the result and compare to a CPU calculation.
 
 Build:
