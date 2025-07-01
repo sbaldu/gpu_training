@@ -5,7 +5,7 @@ You can find the presentation here:
 https://docs.google.com/presentation/d/1Id7dLpzC0UlsJCJeXdJBvwigQ1aFaDmk0l0Pgkv7bwo/edit?usp=sharing" target="_blank">
 https://docs.google.com/presentation/d/1Id7dLpzC0UlsJCJeXdJBvwigQ1aFaDmk0l0Pgkv7bwo/edit?usp=sharing</a>
 
-### Hands-on 
+### Hands-on
 
 The CUDA Runtime API reference manual is a very useful source of information:
 <a href="http://docs.nvidia.com/cuda/cuda-runtime-api/index.html" target="_blank">http://docs.nvidia.com/cuda/cuda-runtime-api/index.html</a>
@@ -34,7 +34,7 @@ $ make
 You can get some useful information about the features and the limits that you will find on the device you will be running your code on. For example:
 
 ```shell
-$ ./deviceQuery 
+$ ./deviceQuery
 ./deviceQuery Starting...
 
  CUDA Device Query (Runtime API) version (CUDART static linking)
@@ -80,7 +80,7 @@ Device 0: "Tesla V100-SXM2-32GB"
      < Default (multiple host threads can use ::cudaSetDevice() with device simultaneously) >
 
 deviceQuery, CUDA Driver = CUDART, CUDA Driver Version = 12.9, CUDA Runtime Version = 12.9, NumDevs = 1
-Result = PASS   
+Result = PASS
 ```
 
 Some of you are sharing the same machine and some time measurements can be influenced by other users running at the very same moment. It can be necessary to run time measurements multiple times.
@@ -100,7 +100,7 @@ All code lives under `gpu_training/` and compiles on CUDA 12 + gcc 13 (Ubu
 
 ---
 
-## Exercise 1 – CUDA Memory Model 
+## Exercise 1 – CUDA Memory Model
 
 *Goal – feel the separation between CPU (host) and GPU (device) address spaces.*
 
@@ -123,7 +123,7 @@ Add a non‑blocking version using **streams** + `cudaMemcpyAsync` and time a 10
 
 ---
 
-## Exercise 2 – Launch Your First Kernel 
+## Exercise 2 – Launch Your First Kernel
 
 *Goal – understand grid/block configuration and indexing.*
 
@@ -145,7 +145,7 @@ nvcc -std=c++20 launch_kernel.cu -o ex02 && ./ex02
 
 ---
 
-## Exercise 3 – 2‑D Grid & Block 
+## Exercise 3 – 2‑D Grid & Block
 
 *Goal – move from 1‑D to 2‑D indexing.*
 
@@ -174,13 +174,13 @@ nvcc -std=c++20 ex03_fill_matrix.cu -o ex03 && ./ex03
 
 1. Kernel #1: each block loads its slice, does **shared‑mem tree reduction**, writes one partial sum.
 2. Kernel #2: single block reduces those partials into the final total.
-3. Copy result, compare to `std::accumulate`.  
+3. Copy result, compare to `std::accumulate`.
 
 *Bonus*: one‑step reduction (single kernel).
 
 ---
 
-## Parallel Challenge – **The Circle of Life** 
+## Parallel Challenge – **The Circle of Life**
 
 A toroidal predator–prey world.  Build the starter **CPU version** first, then port to CUDA
 
@@ -193,7 +193,7 @@ make serial
 
 Can you use the asynchronous GPU kernel launch to execute the generation of a git frame on the CPU while the GPU is running the next iteration?
 
-<img src="simulation.gif" alt="circleoflife" title="Circle of Life" width="500" height="500" /> 
+<img src="simulation.gif" alt="circleoflife" title="Circle of Life" width="500" height="500" />
 
 ---
 
@@ -205,7 +205,7 @@ Can you use the asynchronous GPU kernel launch to execute the generation of a gi
 * `dim3` defaults `z=1`; you almost never need a non‑unit Z for these labs.
 * For reductions, `blockDim.x` **must** be a power‑of‑two when you half the stride each step.
 
-## Thrust 
+## Thrust
 
 The four labs below mirror the CUDA ones but use the Thrust C++ library. All code lives in hands-on/thrust/XX_<name>/.
 Every exercise follows the same workflow:
@@ -300,7 +300,7 @@ Copy to `d_v1`, `d_v2`.
 
 Use `thrust::transform` with a zip iterator pair to compute
 `|v1-v2|` into a temporary `device_vector<int>` diffs.
-    
+
 ```
     auto first = thrust::make_zip_iterator(thrust::make_tuple(d_v1.begin(),
                                                               d_v2.begin()));
@@ -323,7 +323,7 @@ cd hands-on/thrust/04_max_difference
 make
 ```
 
-### Common Pitfalls & Tips 
+### Common Pitfalls & Tips
 
     Prefer algorithms (transform, reduce) over raw loops—Thrust chooses good launches for you.
 
@@ -333,3 +333,74 @@ make
 
     Thrust follows C++20 ranges concepts; use std::views on the host for quick sanity checks.
 
+# GPU programming with CuPy
+
+## set up
+
+`ssh` to the machine with this command:
+```bash
+ssh -L XXXX:localhost:XXXX <username>@131.154.XX.YY
+```
+where XXXX is a 4-digit number, unique for each user.
+*Your 4-digit number is `90` plus your ID from the table in the markdown*.
+
+Once you are inside the machine, you can start JupyterLab with the command:
+```bash
+jupyter-lab --port XXXX
+```
+Once JupyterLab is running, you will find in the output a URL like this:
+
+```bash
+...
+    Or copy and paste one of these URLs:
+        http://localhost:9004/lab?token=8928e7071...
+        http://127.0.0.1:9004/lab?token=8928e7071...
+...
+```
+Paste one of these URLs in your local browser, and you should see the JupyterLab page.
+
+## Exercises
+
+### Exercise 1: port NumPy code to CuPy
+
+Take the code written with NumPy and modify it to use CuPy. Time both executions to compare CPU vs. GPU speedup.
+
+**Note:** GPU operations are asynchronous. Use:
+
+```python
+cp.cuda.Device().synchronize()
+```
+
+before stopping your timer to get accurate timings.
+
+You can try the same with the Python code of your personal project!
+
+### Exercise 2: transfers and GPU allocation
+
+1. Create two arrays of `N` random numbers on CPU
+2. Copy them to the GPU
+3. Sum them
+4. Copy them back to the CPU.
+
+Now avoid the copy to the GPU by creating the random arrays directly on the device with CuPy.
+
+### Exercise 3: write a kernel
+
+Write a kernel (take one from the CUDA exercises or write your own) with CuPy using:
+
+* `cp.RawModule`
+* `cp.ElementwiseKernel` (you can use the variable `i` for the the index within the loop and method `_ind.size()` for the total number of elements to apply the elementwise operation)
+
+### Exercise 4: reduction
+
+Implement the reduction kernel:
+
+* using `cp.RawModule` and the CUDA kernel you wrote during the CUDA part
+* using `cp.ReductionKernel`
+* using `cp.sum`
+
+Tips:
+
+* Add `%%time` or `time.time()` + `cp.cuda.Device().synchronize()` for accurate timing.
+* Check GPU utilization using `watch nvidia-smi` while kernels run.
+* Experiment with different vector sizes to check GPU utilization and speed-up.
