@@ -13,7 +13,7 @@ void generate_data(thrust::host_vector<float> &data) {
 }
 
 int main() {
-  int N = 1 << 1024;
+  int N = 1024;
   // Part 1: Allocate an host vector of floats
   auto h_data = ...;
 
