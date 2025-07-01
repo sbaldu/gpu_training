@@ -1,4 +1,4 @@
-# Introduction to GPU Programming with CUDA
+# Introduction to GPU Programming 
 ### Presentation:
 You can find the presentation here:
 <a href="
