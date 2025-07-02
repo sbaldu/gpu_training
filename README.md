@@ -388,14 +388,14 @@ Now avoid the copy to the GPU by creating the random arrays directly on the devi
 
 Write a kernel (take one from the CUDA exercises or write your own) with CuPy using:
 
-* `cp.RawModule`
+* `cp.RawKernel`
 * `cp.ElementwiseKernel` (you can use the variable `i` for the the index within the loop and method `_ind.size()` for the total number of elements to apply the elementwise operation)
 
 ### Exercise 4: reduction
 
 Implement the reduction kernel:
 
-* using `cp.RawModule` and the CUDA kernel you wrote during the CUDA part
+* using `cp.RawKernel` and the CUDA kernel you wrote during the CUDA part
 * using `cp.ReductionKernel`
 * using `cp.sum`
 
