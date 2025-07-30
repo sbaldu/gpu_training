@@ -6,7 +6,6 @@
 //
 // Build:   nvcc -std=c++17 memory_model.cu -o ex01
 // ─────────────────────────────────────────────────────────────────────────────
-
 // C++ headers
 #include <cassert>
 #include <iostream>
