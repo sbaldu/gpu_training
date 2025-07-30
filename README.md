@@ -180,49 +180,16 @@ nvcc -std=c++20 ex03_fill_matrix.cu -o ex03 && ./ex03
 
 ---
 
-## Parallel Challenge – **The Circle of Life**
-
-A toroidal predator–prey world.  Build the starter **CPU version** first, then port to CUDA
-
-Reference CPU build:
-
-```bash
-make serial
-./circle_of_life --width 256 --height 256 --seed 42
-```
-
-Can you use the asynchronous GPU kernel launch to execute the generation of a git frame on the CPU while the GPU is running the next iteration?
-
-<img src="simulation.gif" alt="circleoflife" title="Circle of Life" width="500" height="500" />
-
----
-
-### Common Pitfalls & Tips
-
-* **Always** `cudaGetLastError()` after a launch when debugging.
-* Use **asserts** on the host to check results before optimising.
-* Remember `cudaStreamSynchronize()` before timing or freeing async memory.
-* `dim3` defaults `z=1`; you almost never need a non‑unit Z for these labs.
-* For reductions, `blockDim.x` **must** be a power‑of‑two when you half the stride each step.
-
 ## Thrust
 
 The four labs below mirror the CUDA ones but use the Thrust C++ library. All code lives in hands-on/thrust/XX_<name>/.
 Every exercise follows the same workflow:
 
 1. Open the `.cu` file and replace each ►►► TODO ◄◄◄.
-2. Build with the provided Makefile:   `$ make`       # or  make test  when shown
+2. Build with the provided Makefile:   `$ make`
 3. Run → the program prints “…PASSED 🎉” (or an assert succeeds).
 
-    Build environment
-    CUDA 12.9 · gcc 13 · Ubuntu 22.04.
-    Thrust ships inside the CUDA toolkit—no extra install needed.
-
 ### Exercise 1 – Memory Model with Thrust Vectors
-
-*Folder*: thrust/01_memory_model
-*Goal*: practice host ↔ device copies and Thrust containers.
-Step	What you implement
 
 1	Initialize a `thrust::host_vector<int> h_buf(dim)` with 0, 1, 2, … (hint : `thrust::sequence`)
 2	Create two `thrust::device_vector<int>` buffers `d1`, `d2`.
@@ -231,18 +198,7 @@ Step	What you implement
 5	Zero h_buf on the CPU.
 6	Copy d2 → h_buf and assert that values are again 0…dim-1.
 
-Build & run:
-```
-cd hands-on/thrust/01_memory_model
-make         # builds memory_model
-./memory_model
-```
-Variation: time the H↔D copy using cudaEvent_t and compare to the raw‐pointer CUDA version.
 ### Exercise 2 – Your First Thrust “Kernel”
-
-*Folder* : thrust/02_my_first_kernel
-
-*Goal* : launch-free vector operations and async transfers.
 
     Pinned-host buffer h_a (use thrust::universal_vector or cudaMallocHost).
 
@@ -256,15 +212,7 @@ Variation: time the H↔D copy using cudaEvent_t and compare to the raw‐pointe
 
     Verify with an assert that h_a == {42, 43, …}.
 
-Build:
-```
-cd hands-on/thrust/02_my_first_kernel
-make
-```
-Run prints Correct, good work!.
-
-Tip: wrap the Thrust copy in CUDA_CHECK(cudaStreamSynchronize(queue)); before destroying the stream to avoid race conditions.
-### Exercise 3 – Data Statistics (Mean & Stdev)
+### Exercise 3 – Data Statistics
 
 *Folder *: thrust/03_data_statistics
 *Goal *: combine transform and reduce to compute simple stats.
@@ -272,64 +220,14 @@ Tip: wrap the Thrust copy in CUDA_CHECK(cudaStreamSynchronize(queue)); before de
 1.	Host vector `h_data(N)`; fill with random floats (provided helper).
 2.	Copy to `thrust::device_vector<float> d_data`.
 3.	`Mean = thrust::reduce(d_data.begin(), d_data.end()) / N`.
-4.	`squared_diffs[i] = (d_data[i] – mean)²` via `thrust::transform` with a lambda or functor.
+4.	`squared_diffs[i] = (d_data[i] – mean)²` via `thrust::transform`.
 5.	`Stdev = sqrt(reduce(squared_diffs)/N)`.
-6.	Challenge: recompute stdev without the intermediate buffer (use a binary transform-reduce).
-
-Build & run:
-```
-cd hands-on/thrust/03_data_statistics
-make test      # Makefile prints mean & σ and checks against CPU reference
-```
-Hints
-
-```
-    thrust::placeholders::_1 can shorten lambdas (_1 - mean).
-```
-
-    For the "no buffer" variant use `thrust::transform_reduce`.
+6.	Challenge: recompute stdev without the intermediate buffer.
 
 ### Exercise 4 – Maximum Absolute Difference (Zip Iterators)
-
-*Folder*: thrust/04_max_difference
-*Goal*: learn zip iterators and element-wise transforms.
 
 Two small host vectors `h_v1`, `h_v2` already provided.
 
 Copy to `d_v1`, `d_v2`.
 
-Use `thrust::transform` with a zip iterator pair to compute
-`|v1-v2|` into a temporary `device_vector<int>` diffs.
-
-```
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(d_v1.begin(),
-                                                              d_v2.begin()));
-    auto last  = first + d_v1.size();
-    thrust::transform(first, last, diffs.begin(),
-                      [] __device__ (auto t) {
-                        int a = thrust::get<0>(t);
-                        int b = thrust::get<1>(t);
-                        return abs(a - b);
-                      });
-
-    max_difference = thrust::reduce(diffs.begin(), diffs.end(), 0, thrust::maximum<int>());
-```
-
-    Print the result and compare to a CPU calculation.
-
-Build:
-```
-cd hands-on/thrust/04_max_difference
-make
-```
-
-### Common Pitfalls & Tips
-
-    Prefer algorithms (transform, reduce) over raw loops—Thrust chooses good launches for you.
-
-    Explicit streams: .on(my_stream) works with every algorithm.
-
-    device_vector reallocation is costly—reserve capacity if you grow it.
-
-    Thrust follows C++20 ranges concepts; use std::views on the host for quick sanity checks.
-
+Use `thrust::transform` with a zip iterator pair to compute.
